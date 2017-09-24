@@ -9,9 +9,9 @@ import tensorflow as tf
 import numpy as np
 
 
-from .. import dqn
 from replay_buffer import ReplayBuffer
 from epsilon_schedule import LinearSchedule
+from build_graph import build_act, build_train
 
 
 class ActWrapper(object):
@@ -23,7 +23,7 @@ class ActWrapper(object):
     def load(path, num_cpus=1):
         with open(path, "rb") as f:
             model_data, act_params = dill.load(f)
-        act = dqn.build_act(**act_params)
+        act = build_act(**act_params)
         sess = U.make_session(num_cpus=num_cpus)
         sess.__enter__()
         with tempfile.TemporaryDirectory() as td:
@@ -67,22 +67,55 @@ def learn(env,
           gamma=1.0,
           batch_size=32,
           param_noise=False,
-          pre_run_steps=10000,
+          pre_run_steps=1000,
           exploration_fraction=0.1,
-          final_epsilon=0.1):
+          final_epsilon=0.1,
+          callback=None):
+    """
+    :param env: gym.Env, environment from OpenAI
+    :param q_func: (tf.Variable, int, str, bool) -> tf.Variable
+        the q function takes the following inputs:
+        input_ph: tf.placeholder, network input
+        n_actions: int, number of possible actions
+        scope: str, specifying the variable scope
+        reuse: bool, whether to reuse the variable given in `scope`
+    :param alpha: learning rate
+    :param num_cpu: number of cpu to use
+    :param n_steps: number of training steps
+    :param update_target_every: frequency to update the target network
+    :param train_main_every: frequency to update(train) the main network
+    :param print_every: how often to print message to console
+    :param checkpoint_every: how often to save the model.
+    :param buffer_size: size of the replay buffer
+    :param gamma: int, discount factor
+    :param batch_size: int, size of the input batch
+    :param param_noise: bool, whether to use parameter noise
+    :param pre_run_steps: bool, pre-run steps to fill in the replay buffer. And only
+        after `pre_run_steps` steps, will the main and target network begin to update.
+    :param exploration_fraction: float, between 0 and 1. Fraction of the `n_steps` to
+        linearly decrease the epsilon. After that, the epsilon will remain unchanged.
+    :param final_epsilon: float, final epsilon value, usually a very small number
+        towards zero.
+    :param callback: (dict, dict) -> bool
+        a function to decide whether it's time to stop training, takes following inputs:
+        local_vars: dict, the local variables in the current scope
+        global_vars: dict, the global variables in the current scope
+    :return: ActWrapper, a callable function
+    """
     n_actions = env.action_space.n
     sess = U.make_session(num_cpu)
     sess.__enter__()
 
     def make_obs_ph(name):
         return U.BatchInput(env.observation_space.shape, name=name)
-    act, train, update_target, _ = dqn.build_train(
+    act, train, update_target, debug = build_train(
         make_obs_ph,
         q_func,
         n_actions,
         optimizer=tf.train.AdamOptimizer(alpha),
         gamma=gamma,
-        param_noise=param_noise
+        param_noise=param_noise,
+        grad_norm_clipping=10
     )
     act_params = {
         "q_func": q_func,
@@ -93,17 +126,22 @@ def learn(env,
     exploration = LinearSchedule(schedule_steps=int(exploration_fraction * n_steps),
                                  final_p=final_epsilon,
                                  initial_p=1.0)
+    writer = tf.summary.FileWriter("./log", sess.graph)
 
     U.initialize()
+    writer.close()
     update_target()  # copy from the main network
     episode_rewards = []
     current_episode_reward = 0.0
     model_saved = False
-    saved_mean_reward = None
+    saved_mean_reward = 0.0
     obs_t = env.reset()
     with tempfile.TemporaryDirectory() as td:
         model_file_path = os.path.join(td, "model")
         for step in range(n_steps):
+            if callback is not None:
+                if callback(locals(), globals()):
+                    break
             kwargs = {}
             if not param_noise:
                 epsilon = exploration.value(step)
@@ -113,30 +151,36 @@ def learn(env,
             obs_tp1, reward, done, _ = env.step(action)
             current_episode_reward += reward
             buffer.add(obs_t, action, reward, obs_tp1, done)
+            obs_t = obs_tp1
             if done:
                 obs_t = env.reset()
                 episode_rewards.append(current_episode_reward)
+                current_episode_reward = 0.0
             # given sometime to fill in the buffer
             if step < pre_run_steps:
                 continue
+            # q_value = debug["q_values"]
+            # if step % 1000 == 0:
+            #     print(q_value(np.array(obs_t)[None]))
             if step % train_main_every == 0:
                 obs_ts, actions, rewards, obs_tp1s, dones = buffer.sample(batch_size)
+                rewards = (rewards - np.mean(rewards)) / np.max(rewards)
                 weights = np.ones_like(dones)
                 td_error = train(obs_ts, actions, rewards, obs_tp1s, dones, weights)
             if step % update_target_every == 0:
                 update_target()
             mean_100eps_reward = float(np.mean(episode_rewards[-101:-1]))
             if done and print_every is not None and len(episode_rewards) % print_every == 0:
-                print("step %d, episode %d, epsilon %.2f, current reward %.2f, running mean reward %.2f" %
-                      (step, len(episode_rewards), epsilon, current_episode_reward, mean_100eps_reward))
-            if checkpoint_every is not None and step % checkpoint_every:
+                print("step %d, episode %d, epsilon %.2f, running mean reward %.2f" %
+                      (step, len(episode_rewards), epsilon, mean_100eps_reward))
+            if checkpoint_every is not None and step % checkpoint_every == 0:
                 if saved_mean_reward is None or mean_100eps_reward > saved_mean_reward:
-                    saved_mean_reward = mean_100eps_reward
                     U.save_state(model_file_path)
                     model_saved = True
                     if print_every is not None:
                         print("Dump model to file due to mean reward increase: %.2f -> %.2f" %
                               (saved_mean_reward, mean_100eps_reward))
+                    saved_mean_reward = mean_100eps_reward
         if model_saved:
             U.load_state(model_file_path)
             if print_every:

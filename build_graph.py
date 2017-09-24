@@ -22,18 +22,20 @@ def build_act(make_obs_ph, q_func, n_actions, scope="deepq", reuse=None):
         stochastic_ph = tf.placeholder(tf.bool, shape=[], name="stochastic")
         epsilon_ph = tf.placeholder(tf.float32, shape=[], name="epsilon")
 
-        epsilon = tf.get_variable("epsilon", shape=(), initializer=tf.constant_initializer(0))
+        epsilon = tf.get_variable("eps", shape=(), initializer=tf.constant_initializer(0))
         values = q_func(observations_ph.get(), n_actions, scope="q_func")
-        deterministic_actions = tf.argmax(values, axis=1)
-        batch_size = tf.stack([get_dimension(observations_ph, 0)])
-        random_actions = sample_from_uniform(batch_size, n_actions, tf.int64)
-        choose_random_flag = sample_from_uniform(batch_size, 1, tf.float32) < epsilon
-        final_actions = tf.where(choose_random_flag, random_actions, deterministic_actions)
+        with tf.variable_scope("epsilon_chose", reuse=False):
+            deterministic_actions = tf.argmax(values, axis=1)
+            batch_size = tf.stack([get_dimension(observations_ph.get(), 0)])
+            random_actions = sample_from_uniform(batch_size, n_actions, tf.int64)
+            choose_random_flag = sample_from_uniform(batch_size, 1, tf.float32) < epsilon
+            final_actions = tf.where(choose_random_flag, random_actions, deterministic_actions)
         output_actions = tf.cond(stochastic_ph, lambda: final_actions, lambda: deterministic_actions)
-        update_epsilon_op = epsilon.assign(tf.cond(epsilon >= 0, lambda: epsilon_ph, lambda: epsilon))
+        with tf.variable_scope("epsilon_assign", reuse=False):
+            update_epsilon_op = epsilon.assign(tf.cond(epsilon_ph >= 0, lambda: epsilon_ph, lambda: epsilon))
         act = U.make_function(inputs=(observations_ph, stochastic_ph, epsilon_ph),
                               outputs=output_actions,
-                              givens={epsilon_ph: -1.0, stochastic_ph: True},
+                              givens={stochastic_ph: True},
                               updates=[update_epsilon_op])
         return act
 
@@ -75,10 +77,11 @@ def build_train(make_obs_ph, q_func, n_actions, optimizer, grad_norm_clipping=No
         act_f = build_act(make_obs_ph, q_func, n_actions, scope=scope, reuse=reuse)
 
     with tf.variable_scope(scope, reuse=reuse):
+        gamma = tf.constant(gamma, name="gamma")
         obs_t_ph = U.ensure_tf_input(make_obs_ph("obs_t"))
         act_t_ph = tf.placeholder(tf.int64, shape=[None], name="action")
         rew_t_ph = tf.placeholder(tf.float32, shape=[None], name="reward")
-        obs_tp1_ph = tf.placeholder(make_obs_ph("obs_tp1"))
+        obs_tp1_ph = U.ensure_tf_input(make_obs_ph("obs_tp1"))
         done_mask_ph = tf.placeholder(tf.float32, shape=[None], name="done")
         weights_ph = tf.placeholder(tf.float32, shape=[None], name="weight")
         # q values
@@ -100,14 +103,15 @@ def build_train(make_obs_ph, q_func, n_actions, optimizer, grad_norm_clipping=No
         errors = U.huber_loss(td_error)
         weighted_error = tf.reduce_mean(errors * weights_ph)
         if grad_norm_clipping is not None:
-            raise NotImplemented()
+            train_op = U.minimize_and_clip(optimizer, weighted_error, q_func_vars, clip_val=grad_norm_clipping)
         else:
             train_op = optimizer.minimize(weighted_error, var_list=q_func_vars)
-        update_target_ops = []
-        for qvar, qtarget_var in zip(sorted(q_func_vars, key=lambda v: v.name),
-                                     sorted(q_target_vars, key=lambda v: v.name)):
-            update_target_ops.append(qtarget_var.assign(qvar))
-        update_target_network = tf.group(*update_target_ops)
+        with tf.variable_scope("update_target", reuse=False):
+            update_target_ops = []
+            for qvar, qtarget_var in zip(sorted(q_func_vars, key=lambda v: v.name),
+                                         sorted(q_target_vars, key=lambda v: v.name)):
+                update_target_ops.append(qtarget_var.assign(qvar))
+            update_target_network = tf.group(*update_target_ops)
         # create callable function
         train_f = U.make_function(
             inputs=[obs_t_ph, act_t_ph, rew_t_ph, obs_tp1_ph, done_mask_ph, weights_ph],

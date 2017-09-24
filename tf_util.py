@@ -77,9 +77,11 @@ def make_function(inputs, outputs, updates=None, givens=None):
         return lambda *args, **kwargs: f(*args, **kwargs)[0]
 
 
-def huber_loss(x, alpha=1.0):
-    flag = tf.abs(x) < alpha
-    return tf.where(flag, 0.5 * tf.square(x), alpha * (tf.abs(x) - 0.5*alpha))
+def huber_loss(x, delta=1.0):
+    with tf.variable_scope("huber_loss", reuse=False):
+        delta = tf.constant(delta, name="delta")
+        flag = tf.abs(x) < delta
+        return tf.where(flag, 0.5 * tf.square(x), delta * (tf.abs(x) - 0.5 * delta))
 
 
 def absolute_scope_name(scope):
@@ -101,3 +103,16 @@ def scope_vars(scope, trainable_only=False):
         tf.GraphKeys.TABLE_INITIALIZERS if trainable_only else tf.GraphKeys.GLOBAL_VARIABLES,
         scope=scope if isinstance(scope, str) else scope.name
     )
+
+
+def minimize_and_clip(optimizer, objective, var_list, clip_val=10):
+    """Minimized `objective` using `optimizer` w.r.t. variables in
+    `var_list` while ensure the norm of the gradients for each
+    variable is clipped to `clip_val`
+    """
+    with tf.variable_scope("gradient_clipping", reuse=False):
+        gradients = optimizer.compute_gradients(objective, var_list=var_list)
+        for i, (grad, var) in enumerate(gradients):
+            if grad is not None:
+                gradients[i] = (tf.clip_by_norm(grad, clip_val), var)
+        return optimizer.apply_gradients(gradients)
