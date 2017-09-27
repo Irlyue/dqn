@@ -119,17 +119,17 @@ def learn(env,
     )
     act_params = {
         "q_func": q_func,
-        "n_actions": n_actions,
-        "make_obs_ph": make_obs_ph
+        "n_actions": env.action_space.n,
+        "make_obs_ph": make_obs_ph,
     }
     buffer = ReplayBuffer(buffer_size)
     exploration = LinearSchedule(schedule_steps=int(exploration_fraction * n_steps),
                                  final_p=final_epsilon,
                                  initial_p=1.0)
-    writer = tf.summary.FileWriter("./log", sess.graph)
+    # writer = tf.summary.FileWriter("./log", sess.graph)
 
     U.initialize()
-    writer.close()
+    # writer.close()
     update_target()  # copy from the main network
     episode_rewards = []
     current_episode_reward = 0.0

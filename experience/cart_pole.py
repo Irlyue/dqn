@@ -24,21 +24,21 @@ def callback(local_vars, global_vars):
     :param global_vars: dict
     :return: bool
     """
-    return local_vars['step'] > 100 and sum(local_vars['episode_rewards'][-101:-1]) > 100 * 185
+    return local_vars['step'] > 100 and sum(local_vars['episode_rewards'][-101:-1]) > 100 * 55
 
 
-def show_result(env, act_f):
-    counter = 0
-    obs_t = env.reset()
-    done = False
-    while counter < 100000:
-        counter += 1
-        env.render()
-        step = act_f(np.array(obs_t)[None], epsilon=0.0)[0]
-        obs_tp1, reward, done, info = env.step(step)
-        obs_t = obs_tp1
-        if done:
-            obs_t = env.reset()
+# def show_result(env, act_f):
+#     counter = 0
+#     obs_t = env.reset()
+#     done = False
+#     while counter < 1000:
+#         counter += 1
+#         env.render()
+#         step = act_f(np.array(obs_t)[None], epsilon=0.0)[0]
+#         obs_tp1, reward, done, info = env.step(step)
+#         obs_t = obs_tp1
+#         if done:
+#             obs_t = env.reset()
 
 
 def main():
@@ -48,9 +48,10 @@ def main():
                        q_func,
                        exploration_fraction=0.35,
                        final_epsilon=0.1,
-                       alpha=5e-4,
+                       alpha=1e-3,
                        callback=callback)
     show_result(env, act)
+    act.save("./model.ckpt")
 
 
 if __name__ == "__main__":
