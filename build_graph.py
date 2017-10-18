@@ -35,7 +35,7 @@ def build_act(make_obs_ph, q_func, n_actions, scope="deepq", reuse=None):
             update_epsilon_op = epsilon.assign(tf.cond(epsilon_ph >= 0, lambda: epsilon_ph, lambda: epsilon))
         act = U.make_function(inputs=(observations_ph, stochastic_ph, epsilon_ph),
                               outputs=output_actions,
-                              givens={stochastic_ph: True},
+                              givens={stochastic_ph: True, epsilon_ph: -1.0},
                               updates=[update_epsilon_op])
         return act
 

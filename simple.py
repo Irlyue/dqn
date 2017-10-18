@@ -42,7 +42,7 @@ class ActWrapper(object):
             U.save_state(os.path.join(td, "model"))
             filepath = os.path.join(td, "packed.zip")
             with zipfile.ZipFile(filepath, "w") as zipf:
-                for root, dirs, filenames in os.walk(filepath):
+                for root, dirs, filenames in os.walk(td):
                     for filename in filenames:
                         fully_path = os.path.join(root, filename)
                         # leave the packed.zip file alone
@@ -164,7 +164,6 @@ def learn(env,
             #     print(q_value(np.array(obs_t)[None]))
             if step % train_main_every == 0:
                 obs_ts, actions, rewards, obs_tp1s, dones = buffer.sample(batch_size)
-                rewards = (rewards - np.mean(rewards)) / np.max(rewards)
                 weights = np.ones_like(dones)
                 td_error = train(obs_ts, actions, rewards, obs_tp1s, dones, weights)
             if step % update_target_every == 0:

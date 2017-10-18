@@ -1,21 +1,9 @@
 import gym
-import numpy as np
-import tensorflow as tf
-import tensorflow.contrib.layers as layers
-
-
 import simple
+import numpy as np
 
 
-def q_func(input_ph, n_actions, scope, reuse=None):
-    with tf.variable_scope(scope, reuse=reuse):
-        hidden_layer = layers.fully_connected(inputs=input_ph,
-                                              num_outputs=64,
-                                              activation_fn=tf.nn.relu)
-        outputs = layers.fully_connected(inputs=hidden_layer,
-                                         num_outputs=n_actions,
-                                         activation_fn=None)
-        return outputs
+from experience.model import q_func_cart_pole
 
 
 def callback(local_vars, global_vars):
@@ -24,35 +12,34 @@ def callback(local_vars, global_vars):
     :param global_vars: dict
     :return: bool
     """
-    return local_vars['step'] > 100 and sum(local_vars['episode_rewards'][-101:-1]) > 100 * 55
+    return local_vars['step'] > 100 and sum(local_vars['episode_rewards'][-101:-1]) > 100 * 50
 
 
-# def show_result(env, act_f):
-#     counter = 0
-#     obs_t = env.reset()
-#     done = False
-#     while counter < 1000:
-#         counter += 1
-#         env.render()
-#         step = act_f(np.array(obs_t)[None], epsilon=0.0)[0]
-#         obs_tp1, reward, done, info = env.step(step)
-#         obs_t = obs_tp1
-#         if done:
-#             obs_t = env.reset()
+def show_result():
+    env = gym.make('CartPole-v0')
+    act = simple.ActWrapper.load("cartpole_model.ckpt", num_cpus=1)
+
+    while True:
+        obs, done = env.reset(), False
+        episode_rew = 0
+        while not done:
+            env.render()
+            obs, rew, done, _ = env.step(act(obs[None])[0])
+            episode_rew += rew
+        print("Episode reward", episode_rew)
 
 
 def main():
-    tf.reset_default_graph()
     env = gym.make("CartPole-v0")
     act = simple.learn(env,
-                       q_func,
+                       q_func_cart_pole,
                        exploration_fraction=0.35,
                        final_epsilon=0.1,
                        alpha=1e-3,
                        callback=callback)
-    show_result(env, act)
-    act.save("./model.ckpt")
+    act.save("./cartpole_model.ckpt")
 
 
 if __name__ == "__main__":
-    main()
+    show_result()
+    # main()
