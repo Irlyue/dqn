@@ -132,3 +132,21 @@ def test_pong():
     print(obs.mean())
     plt.imshow(np.concatenate([obs[:, :, i] for i in range(4)], axis=1), cmap="gray")
     plt.show()
+
+
+def test_breakout_env():
+    env = gym.make('Breakout-v0')
+    env = wrap_env(env)
+    obs = env.reset()
+    for i in range(50):
+        obs, _, done, _ = env.step(2)
+        env.render()
+        if done:
+            obs = env.reset()
+            print('done')
+    print(env.observation_space)
+    print(env.action_space)
+    print(obs.shape)
+    print(obs.mean())
+    plt.imshow(np.concatenate([obs[:, :, i] for i in range(4)], axis=1), cmap="gray")
+    plt.show()
