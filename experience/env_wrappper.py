@@ -59,7 +59,7 @@ class MaxAndSkipEnv(gym.Wrapper):
 class ProcessImageEnv(gym.ObservationWrapper):
     def __init__(self, env):
         super(ProcessImageEnv, self).__init__(env)
-        self.observation_space = spaces.Box(low=0, high=255, shape=(56, 46, 1))
+        self.observation_space = spaces.Box(low=0, high=255, shape=(85, 79, 1))
 
     def _observation(self, obs):
         return ProcessImageEnv.process(obs)
@@ -69,12 +69,12 @@ class ProcessImageEnv(gym.ObservationWrapper):
         gray_img = img[:, :, 0] * 0.299 + img[:, :, 1] * 0.587 + img[:, :, 2] * 0.114
         UP = 30
         BOTTOM = 200
-        LEFT = 10
-        RIGHT = 150
+        LEFT = 0
+        RIGHT = -1
         target_img = gray_img[UP:BOTTOM, LEFT:RIGHT]
         shp = target_img.shape
         # downsample by factor of 2
-        resized_img = imresize(target_img, (shp[0] // 3, shp[1] // 3))
+        resized_img = imresize(target_img, (shp[0] // 2, shp[1] // 2))
         return resized_img[:, :, None]
 
 
@@ -138,8 +138,8 @@ def test_breakout_env():
     env = gym.make('Breakout-v0')
     env = wrap_env(env)
     obs = env.reset()
-    for i in range(50):
-        obs, _, done, _ = env.step(2)
+    for i in range(15):
+        obs, _, done, _ = env.step(np.random.randint(env.action_space.n))
         env.render()
         if done:
             obs = env.reset()

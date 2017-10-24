@@ -11,7 +11,7 @@ q_func_breakout = q_func_pong
 
 
 def breakout_env_test():
-    env = gym.make('Breakout-v0')
+    env = wrap_env(gym.make('Breakout-v0'))
     obs = env.reset()
     counter = 0
     while True:
@@ -29,12 +29,12 @@ def callback(local_vars, global_vars):
     :param global_vars: dict
     :return: bool
     """
-    # return True
-    return local_vars['step'] > 10000 and sum(local_vars['episode_rewards'][-101:-1]) > 15.0
+    # return False
+    return len(local_vars['episode_rewards']) > 100 and sum(local_vars['episode_rewards'][-101:-1]) > 15.0 * 100
 
 
 def show_result():
-    env = wrap_env(gym.make("Breakout-v0"))
+    env = wrap_env(gym.make("BreakoutNoFrameskip-v4"))
     act = simple.ActWrapper.load("breakout_model.ckpt", num_cpus=1)
 
     while True:
@@ -48,26 +48,27 @@ def show_result():
 
 
 def main():
-    env = wrap_env(gym.make("Breakout-v0"))
-    n_steps = 200000
+    env = wrap_env(gym.make("BreakoutNoFrameskip-v4"))
+    n_steps = 500000
     act = simple.learn(env,
                        q_func_breakout,
                        n_steps=n_steps,
-                       exploration_fraction=0.20,
+                       exploration_fraction=0.2,
                        final_epsilon=0.01,
-                       alpha=1e-3,
+                       alpha=5e-4,
                        buffer_size=10000,
                        train_main_every=4,
                        update_target_every=1000,
                        gamma=0.99,
-                       print_every=1,
-                       pre_run_steps=5000,
+                       print_every=4,
+                       pre_run_steps=10000,
                        callback=callback)
     # show_result(env, act)
     act.save("./breakout_model.ckpt")
 
 
 if __name__ == '__main__':
+    # test_breakout_env()
     # breakout_env_test()
     main()
     # show_result()
